@@ -8,18 +8,27 @@ import type { Product, Category, Banner, Order } from '@/lib/types';
 import { Search, ShoppingCart, User, LogOut, Plus, Minus, X, Globe, Printer, FileDown, CheckCircle, Trash2, Pencil, AlertTriangle, BellRing, Settings as SettingsIcon } from 'lucide-react';
 
 const money = (n: number) => `৳${Number(n || 0).toLocaleString('en-US')}`;
-const fuzzy = (a: string, b: string) => {
-  a = a.toLowerCase().replace(/[^a-z0-9\u0980-\u09ff]/g, '');
-  b = b.toLowerCase().replace(/[^a-z0-9\u0980-\u09ff]/g, '');
-  if (!a || !b) return false;
-  if (a.includes(b) || b.includes(a)) return true;
-  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
-  for (let i = 1; i <= a.length; i++) {
+
+// ১০০% নাল-সেফ fuzzy ফাংশন
+const fuzzy = (a?: string | null, b?: string | null) => {
+  const strA = String(a || '').toLowerCase().replace(/[^a-z0-9\u0980-\u09ff]/g, '');
+  const strB = String(b || '').toLowerCase().replace(/[^a-z0-9\u0980-\u09ff]/g, '');
+  if (!strA || !strB) return false;
+  if (strA.includes(strB) || strB.includes(strA)) return true;
+
+  let prev = Array.from({ length: strB.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= strA.length; i++) {
     let cur = [i];
-    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    for (let j = 1; j <= strB.length; j++) {
+      cur[j] = Math.min(
+        cur[j - 1] + 1,
+        prev[j] + 1,
+        prev[j - 1] + (strA[i - 1] === strB[j - 1] ? 0 : 1)
+      );
+    }
     prev = cur;
   }
-  return prev[b.length] <= Math.max(1, Math.floor(b.length * .28));
+  return prev[strB.length] <= Math.max(1, Math.floor(strB.length * 0.28));
 };
 
 let loopAudio: HTMLAudioElement | null = null;
@@ -99,7 +108,6 @@ export default function Store() {
   const [banners, setBanners] = useState<Banner[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
 
-  // অ্যাডমিন কর্তৃক সেট করা ডেলিভারি চার্জ
   const [deliveryCharge, setDeliveryCharge] = useState<number>(40);
   const [deliveryChargeInput, setDeliveryChargeInput] = useState<string>('40');
 
@@ -111,6 +119,8 @@ export default function Store() {
   const [lang, setLang] = useState<'bn' | 'en'>('bn');
 
   const [modal, setModal] = useState<'auth' | 'checkout' | 'orders' | 'admin' | null>(null);
+  const [selectedProductView, setSelectedProductView] = useState<Product | null>(null);
+
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [authName, setAuthName] = useState('');
   const [authPhone, setAuthPhone] = useState('');
@@ -151,7 +161,6 @@ export default function Store() {
   const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
   const [receiptPosition, setReceiptPosition] = useState<'left' | 'middle' | 'right'>('middle');
 
-  // প্রোডাক্ট ডিসকাউন্ট টগল
   const [hasDiscount, setHasDiscount] = useState<boolean>(false);
   const [productForm, setProductForm] = useState<any>({
     name: '',
@@ -212,7 +221,7 @@ export default function Store() {
           fn(
             Object.entries(v)
               .map(([id, x]: any) => ({ id, ...x }))
-              .filter((item: any) => item.active !== false)
+              .filter((item: any) => item && item.active !== false)
               .sort((a: any, b: any) => (b.priority || 0) - (a.priority || 0))
           );
         },
@@ -266,24 +275,29 @@ export default function Store() {
     return () => clearInterval(timer);
   }, [banners]);
 
+  // ১০০% নাল-সেফ প্রোডাক্ট ফিল্টার
   const visible = useMemo(
     () =>
       products
         .filter(
           (p) =>
+            p &&
             p.active !== false &&
             (category === 'all' || p.categoryId === category) &&
-            (!search || fuzzy(p.name, search) || fuzzy(p.nameBn || '', search) || fuzzy(p.description || '', search))
+            (!search ||
+              fuzzy(p.name, search) ||
+              fuzzy(p.nameBn, search) ||
+              fuzzy(p.description, search)
+            )
         )
         .sort((a, b) => (b.priority || 0) - (a.priority || 0)),
     [products, category, search]
   );
 
-  // লাইভ সার্চ সাজেশনস
   const searchSuggestions = useMemo(() => {
-    if (!search.trim()) return [];
+    if (!search || !search.trim()) return [];
     return products
-      .filter((p) => p.active !== false && (fuzzy(p.name, search) || fuzzy(p.nameBn || '', search)))
+      .filter((p) => p && p.active !== false && (fuzzy(p.name, search) || fuzzy(p.nameBn, search)))
       .slice(0, 6);
   }, [products, search]);
 
@@ -303,7 +317,6 @@ export default function Store() {
   const totalRegularPrice = cartRows.reduce((s, p) => s + p.originalPrice * p.qty, 0);
   const discountTotal = Math.max(0, totalRegularPrice - subtotal);
 
-  // ৪৯৯ টাকা বা বেশি হলে ফ্রি ডেলিভারি
   const isFreeDelivery = subtotal >= 499;
   const actualDelivery = isFreeDelivery ? 0 : cartRows.length ? deliveryCharge : 0;
   const total = subtotal + actualDelivery;
@@ -343,19 +356,15 @@ export default function Store() {
       return { ...c, [id]: q };
     });
 
-  // সাজেশনে ক্লিক করলে সরাসরি ঐ প্রোডাক্ট কার্ডে স্ক্রোল করা
   const selectSuggestion = (product: Product) => {
-    setSearch(product.name);
+    setSelectedProductView(product);
     setIsSearchFocused(false);
-    setCategory('all');
-    setTimeout(() => {
-      const el = document.querySelector(`[data-product-id="${product.id}"]`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.classList.add('highlightProduct');
-        setTimeout(() => el.classList.remove('highlightProduct'), 2200);
-      }
-    }, 150);
+  };
+
+  const handleCategoryClick = (catId: string) => {
+    setCategory(catId);
+    setSearch('');
+    setIsSearchFocused(false);
   };
 
   async function authSubmit(e: any) {
@@ -439,15 +448,17 @@ export default function Store() {
     }
   }
 
-  /* Admin Product Save / Update */
   async function saveProduct(e: any) {
     e.preventDefault();
     if (!isAdmin) return;
     setBusy(true);
+    setError('');
     try {
       let image = editProduct?.image || '';
       const file = (document.getElementById('product-image') as HTMLInputElement)?.files?.[0];
-      if (file) image = await uploadImage(file, 'products');
+      if (file) {
+        image = await uploadImage(file, 'products');
+      }
       const id = editProduct?.id || push(ref(db, 'products')).key!;
 
       const payload: any = {
@@ -482,42 +493,53 @@ export default function Store() {
     }
   }
 
-  /* Admin Category Save / Update with Image Upload */
+  // নিরাপদ ক্যাটাগরি সেভ ও আপলোড ফাংশন
   async function saveCategory(e: any) {
     e.preventDefault();
     setBusy(true);
+    setError('');
     try {
       let image = editCategory?.image || '';
-      const file = (document.getElementById('category-image') as HTMLInputElement)?.files?.[0];
+      const fileInput = document.getElementById('category-image') as HTMLInputElement;
+      const file = fileInput?.files?.[0];
+
       if (file) {
-        image = await uploadImage(file, 'categories');
+        try {
+          const uploadedUrl = await uploadImage(file, 'categories');
+          if (uploadedUrl) {
+            image = uploadedUrl;
+          }
+        } catch (uploadErr: any) {
+          console.warn('Image upload issue, continuing with category save:', uploadErr);
+          setError(uploadErr.message || 'Image upload failed. Category saved without new image.');
+        }
       }
 
       const id = editCategory?.id || push(ref(db, 'categories')).key!;
       await set(ref(db, `categories/${id}`), {
-        ...categoryForm,
-        image,
+        name: categoryForm.name || '',
+        nameBn: categoryForm.nameBn || '',
+        image: image || '',
         priority: Number(categoryForm.priority) || 0,
         active: true,
       });
 
       setEditCategory(null);
       setCategoryForm({ name: '', nameBn: '', priority: 0 });
-      const fileInput = document.getElementById('category-image') as HTMLInputElement;
       if (fileInput) fileInput.value = '';
 
       setNotice(t('ক্যাটাগরি সংরক্ষিত হয়েছে! ✨', 'Category successfully saved! ✨'));
     } catch (e: any) {
-      setError(e.message);
+      setError(e.message || 'Failed to save category');
     } finally {
       setBusy(false);
     }
   }
 
-  /* Admin Banner Save / Update */
   async function saveBanner(e: any) {
     e.preventDefault();
     setBusy(true);
+    setError('');
     try {
       let image = editBanner?.image || '';
       const file = (document.getElementById('banner-image') as HTMLInputElement)?.files?.[0];
@@ -545,7 +567,6 @@ export default function Store() {
     }
   }
 
-  /* Delivery Charge Settings Save */
   async function saveDeliverySettings(e: any) {
     e.preventDefault();
     if (!isAdmin) return;
@@ -609,7 +630,6 @@ export default function Store() {
     setReceiptPosition('middle');
   }
 
-  // মানি রিসিট প্রিন্ট ফাংশন (টেবিলে মূল দাম, নিচে ডিসকাউন্ট বিয়োগ ও মোট প্রদেয়)
   function confirmPrintReceipt() {
     if (!receiptOrder) return;
     const o = receiptOrder;
@@ -622,7 +642,6 @@ export default function Store() {
     const safe = (value: any) =>
       String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!));
 
-    // প্রতিটি আইটেমের মূল দাম (Original Price) দিয়ে আসল সাবটোটাল
     const originalSubtotal = o.items.reduce((s, it) => s + (it.originalPrice || it.price) * it.qty, 0);
     const orderDiscount = o.discountTotal !== undefined && o.discountTotal > 0 ? o.discountTotal : Math.max(0, originalSubtotal - o.subtotal);
     const deliveryText = o.delivery === 0 ? 'Free (৳০)' : money(o.delivery);
@@ -827,7 +846,7 @@ export default function Store() {
         </div>
       </header>
 
-      {/* ১. Search Bar একদম উপরে স্থানান্তর করা হলো লাইভ সাজেশনসহ */}
+      {/* স্টিকি ও ক্র্যাশ-প্রুফ সার্চ বার */}
       <section className="searchWrap">
         <Search size={20} />
         <input
@@ -850,7 +869,6 @@ export default function Store() {
           </button>
         )}
 
-        {/* সার্চ সাজেশনস ড্রপডাউন */}
         {isSearchFocused && searchSuggestions.length > 0 && (
           <div className="searchSuggestions">
             {searchSuggestions.map((prod) => (
@@ -921,12 +939,12 @@ export default function Store() {
           </div>
         </div>
         <div className="categories">
-          <button className={`category ${category === 'all' ? 'chosen' : ''}`} onClick={() => setCategory('all')}>
+          <button className={`category ${category === 'all' ? 'chosen' : ''}`} onClick={() => handleCategoryClick('all')}>
             <span>🛍️</span>
             {t('সব পণ্য', 'All items')}
           </button>
           {categories.map((c) => (
-            <button className={`category ${category === c.id ? 'chosen' : ''}`} key={c.id} onClick={() => setCategory(c.id)}>
+            <button className={`category ${category === c.id ? 'chosen' : ''}`} key={c.id} onClick={() => handleCategoryClick(c.id)}>
               <span>{c.image ? <img src={c.image} alt={c.name} /> : '🥗'}</span>
               {lang === 'bn' ? c.nameBn || c.name : c.name}
             </button>
@@ -955,7 +973,7 @@ export default function Store() {
 
             return (
               <article className="product" key={p.id} data-product-id={p.id}>
-                <div className="productPic">
+                <div className="productPic" onClick={() => setSelectedProductView(p)} style={{ cursor: 'pointer' }}>
                   {p.image ? <img src={p.image} alt={displayName} /> : <div className="placeholder">🥦</div>}
                   <span className={`stock ${p.stock > 0 ? 'in' : 'out'}`}>
                     {p.stock > 0 ? `${t('স্টক', 'Stock')}: ${p.stock}` : t('স্টক শেষ', 'Out of stock')}
@@ -966,7 +984,9 @@ export default function Store() {
                 </div>
                 <div className="productInfo">
                   <small className="catBadge">{categories.find((c) => c.id === p.categoryId)?.name || 'Grocery'}</small>
-                  <h3 title={displayName}>{displayName}</h3>
+                  <h3 title={displayName} onClick={() => setSelectedProductView(p)} style={{ cursor: 'pointer' }}>
+                    {displayName}
+                  </h3>
                   <p title={displayDesc}>{displayDesc}</p>
                   <div className="productBottom">
                     <div className="priceGroup">
@@ -1033,54 +1053,50 @@ export default function Store() {
         <span>WhatsApp Support</span>
       </a>
 
-      {/* Auth Modal */}
-      {modal === 'auth' && (
-        <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && setModal(null)}>
-          <div className="dialog authDialog">
-            <button className="close" onClick={() => setModal(null)}>
+      {/* প্রোডাক্ট প্রিভিউ মডাল */}
+      {selectedProductView && (
+        <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && setSelectedProductView(null)}>
+          <div className="dialog productDetailDialog">
+            <button className="close" onClick={() => setSelectedProductView(null)}>
               <X />
             </button>
-            <div className="modalLogo">S</div>
-            <h2>{authMode === 'login' ? t('স্বাগতম', 'Welcome back') : t('অ্যাকাউন্ট তৈরি করুন', 'Create your account')}</h2>
-            <p className="muted">{t('Shohoz Mart-এ কেনাকাটা শুরু করুন', 'Sign in to shop with Shohoz Mart')}</p>
-            <div className="tabs">
-              <button className={authMode === 'login' ? 'active' : ''} onClick={() => setAuthMode('login')}>
-                {t('লগইন', 'Login')}
-              </button>
-              <button className={authMode === 'signup' ? 'active' : ''} onClick={() => setAuthMode('signup')}>
-                {t('অ্যাকাউন্ট খুলুন', 'Create account')}
+            <div className="detailImageWrap">
+              {selectedProductView.image ? <img src={selectedProductView.image} alt={selectedProductView.name} /> : '🥦'}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span className="eyebrow">{categories.find((c) => c.id === selectedProductView.categoryId)?.name || 'GROCERY'}</span>
+              <h2 style={{ margin: '8px 0 4px', fontSize: '22px' }}>
+                {lang === 'bn' ? selectedProductView.nameBn || selectedProductView.name : selectedProductView.name}
+              </h2>
+              <p className="muted" style={{ margin: '8px 0 16px', lineHeight: 1.5 }}>
+                {selectedProductView.description || t('ভালো মানের ফ্রেশ পণ্য', 'Quality grocery item')}
+              </p>
+              <div className="priceGroup" style={{ marginBottom: '18px' }}>
+                {selectedProductView.discountPrice && selectedProductView.discountPrice > 0 ? (
+                  <>
+                    <strong style={{ fontSize: '24px', color: 'var(--green)' }}>{money(selectedProductView.discountPrice)}</strong>
+                    <span className="oldPrice" style={{ fontSize: '16px' }}>{money(selectedProductView.price)}</span>
+                  </>
+                ) : (
+                  <strong style={{ fontSize: '24px', color: 'var(--green)' }}>{money(selectedProductView.price)}</strong>
+                )}
+              </div>
+              <button
+                className="primary"
+                disabled={selectedProductView.stock <= 0}
+                onClick={() => {
+                  add(selectedProductView);
+                  setSelectedProductView(null);
+                }}
+              >
+                {selectedProductView.stock > 0 ? t('কার্টে যোগ করুন', 'Add to Cart') : t('স্টক শেষ', 'Out of Stock')}
               </button>
             </div>
-            <form onSubmit={authSubmit}>
-              {authMode === 'signup' && (
-                <>
-                  <input required placeholder={t('আপনার নাম', 'Your name')} value={authName} onChange={(e) => setAuthName(e.target.value)} />
-                  <input required placeholder={t('মোবাইল নম্বর', 'Phone number')} value={authPhone} onChange={(e) => setAuthPhone(e.target.value)} />
-                </>
-              )}
-              <input required type="email" placeholder="Gmail / Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              <input
-                required
-                minLength={6}
-                type="password"
-                placeholder={t('পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)', 'Password (6+ characters)')}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              {error && <p className="error">{error}</p>}
-              <button className="primary full" disabled={busy}>
-                {busy ? 'Please wait...' : authMode === 'login' ? t('লগইন করুন', 'Login') : t('অ্যাকাউন্ট তৈরি করুন', 'Create account')}
-              </button>
-            </form>
-            <div className="or">OR</div>
-            <button className="googleBtn" onClick={googleLogin}>
-              G&nbsp; {t('Google দিয়ে চালিয়ে যান', 'Continue with Google')}
-            </button>
           </div>
         </div>
       )}
 
-      {/* Checkout Modal */}
+      {/* Checkout / Cart Modal */}
       {modal === 'checkout' && (
         <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && setModal(null)}>
           <div className="dialog checkoutDialog">
