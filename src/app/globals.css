@@ -1544,3 +1544,176 @@ footer b {
     height: 100px;
   }
 }
+
+/* =========================================================
+   NEW FEATURES STYLING: Shohoz Mart Discount, Free Delivery & Receipt
+   ========================================================= */
+
+/* ১. প্রোডাক্ট কার্ডে ডিসকাউন্ট ব্যাজ ও কাটা দাম */
+.discountBadge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #e11d48;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 8px;
+  box-shadow: 0 3px 8px rgba(225, 29, 72, 0.35);
+  z-index: 2;
+  letter-spacing: 0.2px;
+}
+
+.priceGroup {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.oldPrice {
+  font-size: 13px;
+  color: #94a3b8;
+  text-decoration: line-through;
+  font-weight: 500;
+}
+
+/* ২. এডমিন প্যানেলে ডিসকাউন্ট চেকবক্স টগল */
+.discountCheckWrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #eff8ed;
+  border: 1px solid #d4ebd2;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--deep);
+  user-select: none;
+}
+
+.discountCheckWrap input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--green);
+  cursor: pointer;
+  margin: 0;
+}
+
+/* ৩. ৪৯৯+ টাকায় ফ্রি ডেলিভারি ব্যাজ */
+.freeDeliveryNotice {
+  font-size: 11px;
+  background: #e8f5e9;
+  color: #087443;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  display: inline-block;
+  margin-left: 8px;
+  border: 1px solid #b8dfc4;
+}
+
+/* ৪. ফুটারে ফেসবুক পেজ লিংক */
+.footerSocial {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #1877f2;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.15s;
+}
+
+.footerSocial:hover {
+  text-decoration: underline;
+  color: #0d65d9;
+}
+/* Live Search Suggestions Dropdown */
+.searchWrap {
+  position: relative;
+  z-index: 25;
+}
+
+.searchSuggestions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #dce9df;
+  border-radius: 14px;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.12);
+  max-height: 340px;
+  overflow-y: auto;
+  z-index: 50;
+  padding: 6px;
+}
+
+.suggestionItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.suggestionItem:hover {
+  background: #f1f8ee;
+}
+
+.suggestionPic {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: #f7faf7;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.suggestionPic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.suggestionDetails {
+  flex: 1;
+  min-width: 0;
+}
+
+.suggestionDetails b {
+  display: block;
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggestionDetails small {
+  font-size: 12px;
+  color: var(--green);
+  font-weight: 700;
+}
+
+.suggestionOldPrice {
+  text-decoration: line-through;
+  color: #94a3b8;
+  font-size: 11px;
+  margin-left: 6px;
+  font-weight: normal;
+}
+
+/* Highlight Target Product on Selection */
+.highlightProduct {
+  box-shadow: 0 0 0 3px #087443, 0 12px 30px rgba(8, 116, 67, 0.25) !important;
+  transform: translateY(-4px);
+  transition: all 0.4s ease;
+}
