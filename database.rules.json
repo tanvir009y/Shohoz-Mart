@@ -1,0 +1,40 @@
+{
+  "rules": {
+    "products": {
+      ".read": true,
+      "$id": {
+        ".write": "auth != null && auth.token.email === 'shohozmart247@gmail.com'"
+      }
+    },
+    "categories": {
+      ".read": true,
+      "$id": {
+        ".write": "auth != null && auth.token.email === 'shohozmart247@gmail.com'"
+      }
+    },
+    "banners": {
+      ".read": true,
+      "$id": {
+        ".write": "auth != null && auth.token.email === 'shohozmart247@gmail.com'"
+      }
+    },
+    "orders": {
+      ".read": "auth != null && auth.token.email === 'shohozmart247@gmail.com'",
+      "$orderId": {
+        ".write": "(!auth && !data.exists() && newData.child('uid').val() === 'guest') || (auth != null && (auth.token.email === 'shohozmart247@gmail.com' || (!data.exists() && newData.child('uid').val() === auth.uid)))"
+      }
+    },
+    "userOrders": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || auth.token.email === 'shohozmart247@gmail.com')",
+        ".write": "auth != null && (auth.uid === $uid || auth.token.email === 'shohozmart247@gmail.com')"
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || auth.token.email === 'shohozmart247@gmail.com')",
+        ".write": "auth != null && (auth.uid === $uid || auth.token.email === 'shohozmart247@gmail.com')"
+      }
+    }
+  }
+}
