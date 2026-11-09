@@ -1,11 +1,11 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup, signOut, updateProfile } from 'firebase/auth';
 import { onValue, ref, push, set, update, remove, runTransaction } from 'firebase/database';
 import { auth, db, googleProvider, ADMIN_EMAIL } from '@/lib/firebase';
 import { uploadImage } from '@/lib/supabase';
 import type { Product, Category, Banner, Order } from '@/lib/types';
-import { Search, ShoppingCart, User, LogOut, Plus, Minus, X, Globe, Printer, FileDown, CheckCircle, Trash2, Pencil, AlertTriangle } from 'lucide-react';
+import { Search, ShoppingCart, User, LogOut, Plus, Minus, X, Globe, Printer, FileDown, CheckCircle, Trash2, Pencil, AlertTriangle, BellRing } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -24,6 +24,93 @@ const fuzzy = (a: string, b: string) => {
   }
   return prev[b.length] <= Math.max(1, Math.floor(b.length * .28));
 };
+
+// গ্লোবাল অডিও এলিমেন্ট - যা লুপে রিং বাজাতে থাকবে
+let loopAudio: HTMLAudioElement | null = null;
+
+// ব্রাউজারে ইন-মেমোরি ৩ সেকেন্ডের জোরালো রিংটোন জেনারেট করা
+function generateRingToneUri() {
+  const sampleRate = 8000;
+  const duration = 2.4; // ২.৪ সেকেন্ডের একটি রিং সাইকেল
+  const totalSamples = Math.floor(sampleRate * duration);
+  const buffer = new Uint8Array(44 + totalSamples);
+
+  const writeString = (offset: number, str: string) => {
+    for (let i = 0; i < str.length; i++) buffer[offset + i] = str.charCodeAt(i);
+  };
+  const writeUint32 = (offset: number, val: number) => {
+    buffer[offset] = val & 0xff;
+    buffer[offset + 1] = (val >> 8) & 0xff;
+    buffer[offset + 2] = (val >> 16) & 0xff;
+    buffer[offset + 3] = (val >> 24) & 0xff;
+  };
+  const writeUint16 = (offset: number, val: number) => {
+    buffer[offset] = val & 0xff;
+    buffer[offset + 1] = (val >> 8) & 0xff;
+  };
+
+  writeString(0, 'RIFF');
+  writeUint32(4, 36 + totalSamples);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  writeUint32(16, 16);
+  writeUint16(20, 1); // PCM
+  writeUint16(22, 1); // Mono
+  writeUint32(24, sampleRate);
+  writeUint32(28, sampleRate);
+  writeUint16(32, 1);
+  writeUint16(34, 8); // 8-bit
+  writeString(36, 'data');
+  writeUint32(40, totalSamples);
+
+  // জোরালো ও মিষ্টি রিংটোন ওয়েভ (বিপ-বিপ-রিং)
+  for (let i = 0; i < totalSamples; i++) {
+    const t = i / sampleRate;
+    let sample = 128;
+
+    // ০.০ - ০.২৫ সেকে: টোন ১ (৭৮০ Hz)
+    if (t < 0.25) {
+      sample += Math.sin(2 * Math.PI * 784 * t) * 70;
+    }
+    // ০.২৮ - ০.৫৫ সেকে: টোন ২ (১০৪৬ Hz)
+    else if (t >= 0.28 && t < 0.55) {
+      sample += Math.sin(2 * Math.PI * 1046 * t) * 75;
+    }
+    // ০.৬০ - ১.০০ সেকে: দীর্ঘ বেল টোন (১৩১৮ Hz)
+    else if (t >= 0.60 && t < 1.05) {
+      const fade = 1 - (t - 0.60) / 0.45;
+      sample += Math.sin(2 * Math.PI * 1318 * t) * 70 * Math.max(0, fade);
+    }
+    // ১.০৫ থেকে ২.৪ সেকেন্ড পর্যন্ত পজ (রিংটোন বিরতি), তারপর স্বয়ংক্রিয় লুপে আবার বাজবে
+
+    buffer[44 + i] = Math.max(0, Math.min(255, Math.floor(sample)));
+  }
+
+  const blob = new Blob([buffer], { type: 'audio/wav' });
+  return URL.createObjectURL(blob);
+}
+
+function startContinuousAlert() {
+  try {
+    if (!loopAudio) {
+      loopAudio = new Audio(generateRingToneUri());
+      loopAudio.loop = true; // একটানা বাজবে
+    }
+    loopAudio.currentTime = 0;
+    loopAudio.play().catch((err) => {
+      console.log('Audio autoplay blocked, click anywhere on page:', err);
+    });
+  } catch (err) {
+    console.error('Audio initialization error:', err);
+  }
+}
+
+function stopContinuousAlert() {
+  if (loopAudio) {
+    loopAudio.pause();
+    loopAudio.currentTime = 0;
+  }
+}
 
 export default function Store() {
   const [user, setUser] = useState<any>(null);
@@ -69,6 +156,10 @@ export default function Store() {
     id: string;
     title: string;
   } | null>(null);
+
+  // New Order Alert Modal State
+  const [newOrderPopup, setNewOrderPopup] = useState<Order | null>(null);
+  const isFirstOrdersLoad = useRef(true);
 
   const [analysisFrom, setAnalysisFrom] = useState('');
   const [analysisTo, setAnalysisTo] = useState('');
@@ -131,9 +222,30 @@ export default function Store() {
   useEffect(() => {
     if (!user) return;
     const path = isAdmin ? 'orders' : `userOrders/${user.uid}`;
+    isFirstOrdersLoad.current = true;
+
     return onValue(ref(db, path), (s) => {
       const v = s.val() || {};
-      setOrders(Object.entries(v).map(([id, x]: any) => ({ id, ...x })).sort((a: any, b: any) => b.createdAt - a.createdAt));
+      const orderList: Order[] = Object.entries(v)
+        .map(([id, x]: any) => ({ id, ...x }))
+        .sort((a: any, b: any) => b.createdAt - a.createdAt);
+
+      setOrders(orderList);
+
+      // প্রথমবার পেজ লোড হলে অ্যালার্ম বাজবে না
+      if (isFirstOrdersLoad.current) {
+        isFirstOrdersLoad.current = false;
+        return;
+      }
+
+      // নতুন কোনো Pending অর্ডার ঢুকলে একনাগাড়ে রিং বাজবে যতক্ষণ না Accept করা হয়
+      if (isAdmin && orderList.length > 0) {
+        const latest = orderList[0];
+        if (latest.status === 'Pending') {
+          startContinuousAlert();
+          setNewOrderPopup(latest);
+        }
+      }
     });
   }, [user, isAdmin]);
 
@@ -375,6 +487,13 @@ export default function Store() {
     if (!isAdmin) return;
     try {
       if (o.status === status) return;
+
+      // যেকোনো অর্ডার Accept / Cancel / Update করলে অ্যালার্ম সম্পূর্ণ বন্ধ হবে
+      stopContinuousAlert();
+      if (newOrderPopup?.id === o.id) {
+        setNewOrderPopup(null);
+      }
+
       if (status === 'Delivered' && o.status !== 'Delivered') {
         for (const item of o.items) {
           await runTransaction(ref(db, `products/${item.id}/stock`), (v) => Math.max(0, Number(v || 0) - item.qty));
@@ -1200,7 +1319,7 @@ export default function Store() {
         </div>
       )}
 
-      {/* Modern In-Display Delete Confirmation Popup with Animation */}
+      {/* In-Display Delete Confirmation Modal */}
       {deleteDialog && (
         <div className="overlay confirmOverlay" onMouseDown={(e) => e.target === e.currentTarget && setDeleteDialog(null)}>
           <div className="dialog confirmDialog">
@@ -1220,6 +1339,53 @@ export default function Store() {
               </button>
               <button type="button" className="primary deleteBtnAction" disabled={busy} onClick={handleConfirmDelete}>
                 {busy ? t('মুছে ফেলা হচ্ছে...', 'Deleting...') : t('হ্যাঁ, ডিলিট করুন', 'Yes, Delete')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Continuous Ringing & Realtime Alert Popup */}
+      {newOrderPopup && (
+        <div className="overlay newOrderOverlay">
+          <div className="dialog newOrderDialog">
+            <div className="orderBell">
+              <BellRing size={48} color="#087443" />
+            </div>
+            <h2>{t('নতুন অর্ডার এসেছে! 🔔', 'New Order Received! 🔔')}</h2>
+            <p className="muted">
+              {t('কাস্টমার:', 'Customer:')} <b>{newOrderPopup.customerName}</b> ({newOrderPopup.phone})
+            </p>
+            <div className="orderPriceHighlight">
+              {money(newOrderPopup.total)}
+            </div>
+            <div className="orderItemsBrief">
+              {newOrderPopup.items.map((item) => (
+                <span key={item.id}>
+                  {item.name} × {item.qty}
+                </span>
+              ))}
+            </div>
+            <div className="newOrderActions">
+              <button
+                type="button"
+                className="outline"
+                onClick={() => {
+                  stopContinuousAlert();
+                  setNewOrderPopup(null);
+                }}
+              >
+                {t('শব্দ বন্ধ করুন', 'Mute Alert')}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  stopContinuousAlert();
+                  setStatus(newOrderPopup, 'Accepted');
+                }}
+              >
+                {t('Accept Order (গ্রহণ করুন)', 'Accept Order')}
               </button>
             </div>
           </div>
